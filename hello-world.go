@@ -1,5 +1,7 @@
-# add a new comment HELLO
+# add a new comment Git Diff
+# I added first comment
 # add a second comment
+# good comment
 # file:  hello-world.go
 # description:  my very first go program
 
