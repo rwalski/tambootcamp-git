@@ -1,5 +1,6 @@
 # add a new comment HELLO
 # add a second comment
+# reject merge
 # file:  hello-world.go
 # description:  my very first go program
 
