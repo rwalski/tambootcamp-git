@@ -2,6 +2,7 @@
 kind create cluster --name tamlab --config kind-config.yaml
 
 kind get clusters
+kind delete clusters tamlab
 
 kubectl config get-contexts
 kubectl config current-context

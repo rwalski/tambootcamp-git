@@ -1,18 +1,37 @@
-
->> kind delete clusters
+#Delete existing cluster if it exists
 kind delete cluster --name tamlab
 
->> kind get clusters
+>>
+>>Create kubernetes v1.20 cluster with kind:
 
-#Create cluster with kind:
-kind create cluster --name tamlab --config kind-config.yaml
+>> first, make sure you are logged into docker hub to pull the new kubernetes image
+>> Use your dockerhub username and password to authenticate
+% docker login
+Authenticating with existing credentials...
 
->> kubectl config get-contexts
+>> Now, let's create a KIND cluster using a specific version of Kubernetes (v1.20.2) in this case
 
->> brew install helm
->> could not get this to work
-#install metrics-server if you have helm installed already - if not, don't worry about this
-helm install ms stable/metrics-server -n kube-system --set=args={--kubelet-insecure-tls}
+% kind create cluster --name tamlab --config kind-config.yaml  --image kindest/node:v1.20.2
+
+>>  you should get something similar to the following output:
+Creating cluster "tamlab" ...
+ ✓ Ensuring node image (kindest/node:v1.20.2) 🖼 
+⢄⡱ Preparing nodes 📦 📦 📦  
+ ✓ Preparing nodes 📦 📦 📦  
+ ✓ Writing configuration 📜 
+ ✓ Starting control-plane 🕹️ 
+ ✓ Installing CNI 🔌 
+ ✓ Installing StorageClass 💾 
+ ✓ Joining worker nodes 🚜 
+Set kubectl context to "kind-tamlab"
+You can now use your cluster with:
+
+kubectl cluster-info --context kind-tamlab
+
+>> Note:  if you get the following error, keep trying!  Docker is throttling requests
+Error response from daemon: received unexpected HTTP status: 503 Service Unavailable
+
+
 
 #View available clusters
 kind get clusters
@@ -23,130 +42,142 @@ kubectl config current-context
 kubectl config set-context kind-tamlab
 
 #or set explicitly in kubectl command
-kubectl --context kind-tamlab get namespace
+kubectl --context kind-tamlab
 
-#create a namespace
-kubectl create ns demo
+>>
+>> container to container messaging
+>> add example here along with slide
 
+>> 
+>> maybe use rabbitmq to show message queue across pods??
 
-#demo sidecars
+>>
+>> add better slide to show cluster IP
+>>
 
-#deploy a pod in demo namespace
->> you need to modify the version of telegraf from 1.9 to latest!
-kubectl -n demo apply -f 01-pod.yaml
-kubectl -n demo get pod
-#note the two containers
-kubectl -n demo describe pod my-webserver
-#how to get logs for pod with multiple containers
-kubectl -n demo logs my-webserver
->> note: you will get an error with the previous cmd.  must specify a container
-kubectl -n demo logs my-webserver -c nginx
-kubectl -n demo logs my-webserver -c wavefront
+#demo ClusterIP service
+kubectl apply -f 01hello-deploy.yaml
+kubectl apply -f 01hello-svc.yaml
+kubectl get all
+>> see on which node the pods are running
+>> also, look at labels, ports, secrets, volumes, where image is pulled from
+kubectl describe pods
 
+#note service type and internal IP
+#what subnet is the service on vs the pod?
+#find pod IP
+kubectl describe pod backend-<suffix>
 
-#Demo configmap in logging system
-cd logging
-kubectl apply -f fluentd-namespace.yaml
->> kubectl get namespaces, you should see logging
-kubectl -n logging apply -f fluentd-rbac.yaml
->> kubectl get clusterrole, look for "fluentd"
->> kubectl get clusterrolebindings, look for "fluentd"
-kubectl -n logging apply -f fluentd-configmap.yaml
->> kubectl -n logging get cm
-kubectl -n logging apply -f fluentd-ds.yaml
->> kubectl -n logging get ds
->> a daemon set runs a container on every node, you should see (3) instances 
-kubectl -n logging apply -f fluentd-ds-svc.yaml
+#show output from Pod
+kubectl port-forward backend-<suffix> 8080:80
+#open new command window
+atauber-a02:~ atauber$ curl localhost:8080
+{"message":"Hello"}
 
->> kubectl -n logging get service
->> note: type is set to clusterip.  there is no external ip.  exposes the service on a cluster-internal ip
-kubectl -n logging get cm
-kubectl -n logging describe cm fluentd-config
+#show output from a ubuntu pod accessing the service
+#Deploy a ubuntu pod for network and curl tests
+kubectl run my-shell -i --tty --image ubuntu -- /bin/bash
 
-#show configmap mounted in Daemonset
-kubectl -n logging get all
->> kubectl -n logging describe pod fluentd-kssss
-kubectl -n logging exec -it pod/fluentd-<suffix> -- /bin/bash
-ls /etc/kubernetes
-cd /etc/kubernetes/fluentd/
-cat fluentd.conf
-cat kubernetes.conf
-exit
+#install packages into ubuntu
+apt update, apt install curl
 
-#Demo secrets
-#base64 encode the variables to be used in the secret
->> cd ..
-echo -n 'atauber' | base64      --> use output for username in 02-secret.yaml
-echo -n 'VMware123!' | base64   --> use output for password in 02-secret.yaml
+#access the service from ubuntu pod
+#the hello service is a load balancer in front of the 3 replica pods
+#we are in the same namespace so don't need fqdn
+curl hello:80
 
->> edit the 02-secret.yaml file and enter your encrypted username/pwd
+>>
+>> show better slide describing NodePort
 
-kubectl -n demo apply -f 02-secret.yaml
-kubectl -n demo get secret
-kubectl -n demo describe secret test-secret
-kubectl -n demo apply -f 02-secret-pod.yaml
-kubectl -n demo get pod
-kubectl -n demo exec -it secret-test-pod -- /bin/bash
-#look at mount path /etc/secret-volume
-echo "$( cat /etc/secret-volume/username )"
-echo "$( cat /etc/secret-volume/password )"
-exit
+#switch service to NodePort
+kubectl get svc
+- note: Type=ClusterIP
+kubectl delete svc hello
+kubectl apply -f 01hello-svc2.yaml
+kubectl get all
+- note:  Type=NodePort, also note that the Port is 30001
 
-#a more direct way to dump the value of a secret
-kubectl -n demo get secrets/test-secret -o yaml
-kubectl -n demo get secrets/test-secret --template={{.data.password}} | base64 -D
+#note service type, IP, and Port mapping
 
-#rbac demo here
-kubectl get clusterroles
-kubectl describe clusterroles admin
-kubectl describe clusterroles cluster-admin
+#show output from NodePort
+#note that in most environments, the command would be: "curl <K8s node IP>:30001"
+#kind is forwarding the port from the docker K8s container to localhost
+curl localhost:30001
 
-kubectl get clusterrolebinding
-kubectl describe clusterrolebinding system:basic-user
-kubectl describe clusterrolebinding cluster-admin
+>> show accessing service from external ip
 
-#Review the logging/fluentd-rbac.yaml file
-#Note the creation of the service account
-#Find the specification of the service account in fluentd-ds.yaml
+>> show using load balancer (nginx or avi)?
 
-#persistent storage demo here
-kubectl get storageclass
-
-#static PV Demo
-kubectl apply -f 05-pv.yaml
-kubectl get pv
-#note the "demo-pv-volume" with status=Available
-kubectl apply -f 05-pvc.yaml
-kubectl describe pvc demo-pv-claim
-kubectl apply -f 05-pod.yaml
-kubectl get all,pv,pvc
-#note bound status for pv and pvc
-
-#volumeclaimtemplates Demo
-kubectl apply -f 06-mongo.yaml
-kubectl get all,pv,pvc
+>> show using coreDNS to access the service
 
 
-#resource scheduling
-kubectl -n demo apply -f 03-resource-pod.yaml
-kubectl describe nodes    --> look at resource usage on nodes
+#istio demo
 
-#demo excessive memory usage
-#note that this may or may not work right away (OOMKilled) depending on memory pressure in cluster
-#may need to exhaust memory in node
-kubectl -n demo apply -f 03-memory-demo.yaml
-kubectl -n demo top pod memory-demo  (if you have metrics-server installed)
-#run until OOMKilled
-kubectl -n demo get pod memory-demo
+#if using a downloaded istio distribution other than what is in this repo, you will
+#need to adjust the /manifests/profiles/demo.yaml file to add the specific NodePorts: 31080 and 31443
+- port: 80
+  name: http2
+  nodePort: 31080
+  targetPort: 8080
+- port: 443
+  name: https
+  nodePort: 31443
+  targetPort: 8443
+
+#export istioctl path
+cd /istio-1.8.2
+export PATH=$PWD/bin:$PATH
+which istioctl
+
+#install istio into cluster - this uses modified demo profile
+istioctl install -f manifests/profiles/demo.yaml
+
+#add namespace label so that new pods will get the istio sidecar
+kubectl label namespace default istio-injection=enabled
+
+#deploy the sample application
+kubectl apply -f samples/bookinfo/platform/kube/bookinfo.yaml
+kubectl get all
+
+#install gateway
+kubectl apply -f samples/bookinfo/networking/bookinfo-gateway.yaml
+
+#verify access
+open browser to http://localhost:31080/productpage
+
+#install kiali
+kubectl apply -f samples/addons
+kubectl rollout status deployment/kiali -n istio-system
+
+#access kiali
+istioctl dashboard kiali
+
+#demo service mesh
+#note bookinfo example: https://istio.io/latest/docs/examples/bookinfo/
+refresh the productpage multiple times - note how the ratings change as the
+3 different ratings versions get called
+
+#route all traffic to v1 version
+#create VirtualService to route traffic:https://istio.io/latest/docs/tasks/traffic-management/request-routing/
+kubectl apply -f samples/bookinfo/networking/virtual-service-all-v1.yaml
+refresh productpage and note only v1 rating comes back
+
+#cleanup
+kubectl delete -f samples/bookinfo/networking/virtual-service-all-v1.yaml
+
+#demo traffic shifting - 50/50
+#route all to v1
+kubectl apply -f samples/bookinfo/networking/virtual-service-all-v1.yaml
+refresh productpage to verify all going to v1
+
+#apply 50/50 virtual Service
+kubectl apply -f samples/bookinfo/networking/virtual-service-reviews-50-v3.yaml
+refresh productpage to verify a 50% mix to v1 and v3
+
+#read through other traffic management options: https://istio.io/latest/docs/tasks/traffic-management/
 
 
-#Custom Resource Definitions
-kubectl -n demo apply -f 04-crd.yaml
-kubectl api-resources  --> look for crontab
+>>
+>> Add CNI antrea
+>>
 
-#Node operations
-kubectl get nodes
-kubectl describe node tamlab-worker  --> look at Conditions fields
-kubectl cordon tamlab-worker
-kubectl drain tamlab-worker
-kubectl uncordon tamlab-worker
